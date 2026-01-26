@@ -908,6 +908,59 @@ button, a, .nav-btn, .btn-icon{
 /* Polish mondial: better tap handling on mobile */
 button, .nav-btn, .action-btn, a { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 
+
+
+/* --- EISENHOWER: Q2 TENDANCE (GUT) --- */
+.drag-item.eis-plan-item{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.eis-trend{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding-top:2px;
+}
+.eis-trend-meta{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.eis-trend-value{
+  font-variant-numeric: tabular-nums;
+  color: var(--text-main);
+  font-weight: 650;
+  letter-spacing: 0.2px;
+}
+.eis-trend input[type="range"]{
+  flex:1;
+  min-width: 120px;
+  accent-color: #ef4444;
+}
+.drag-item.eis-incandescent{
+  border: 1px solid rgba(239,68,68,0.55);
+  box-shadow: 0 0 0 1px rgba(239,68,68,0.15), 0 0 18px rgba(239,68,68,0.20);
+  background: linear-gradient(180deg, rgba(239,68,68,0.18), rgba(255,255,255,0.10));
+}
+@keyframes eisPulseHot{
+  0%,100% { box-shadow: 0 0 0 1px rgba(239,68,68,0.15), 0 0 18px rgba(239,68,68,0.18); }
+  50% { box-shadow: 0 0 0 1px rgba(239,68,68,0.25), 0 0 26px rgba(239,68,68,0.32); }
+}
+.drag-item.eis-incandescent{
+  animation: eisPulseHot 2.2s ease-in-out infinite;
+}
+
+/* Validation modal (scoped) */
+.eis-validate-overlay{ z-index: 10000; }
+.eis-validate-body{ padding: 18px 22px; }
+.eis-validate-msg{ margin: 0 0 14px 0; color: var(--text-main); font-size: 0.95rem; line-height: 1.35; }
+.eis-validate-item{ margin: 0 0 16px 0; color: var(--text-muted); font-size: 0.9rem; }
+.eis-validate-actions{ display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; padding: 0 22px 18px 22px; }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
@@ -3192,14 +3245,92 @@ if(totalPairs > 200) {
 
 /* --- TOOL 3: EISENHOWER --- */
 const eisenhower = {
+    validateOverlay: null,
+    validateYesBtn: null,
+    validateNoBtn: null,
+    validateItemNameEl: null,
+    _pendingValidateItemId: null,
+
     init() {
         this.renderMatrix();
         this.renderSource();
+        this.bindTrendValidationModal();
     },
+
+    bindTrendValidationModal() {
+        if (this.validateOverlay) return; // bind once
+        this.validateOverlay = document.getElementById('eis-validate-overlay');
+        if (!this.validateOverlay) return;
+
+        this.validateYesBtn = document.getElementById('eis-validate-yes');
+        this.validateNoBtn = document.getElementById('eis-validate-no');
+        this.validateItemNameEl = document.getElementById('eis-validate-item');
+
+        // Close on background click
+        this.validateOverlay.addEventListener('click', (e) => {
+            if (e.target === this.validateOverlay) this.closeTrendValidation();
+        });
+
+        // Escape closes
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.isTrendValidationOpen()) this.closeTrendValidation();
+        });
+
+        if (this.validateYesBtn) this.validateYesBtn.addEventListener('click', () => {
+            if (!this._pendingValidateItemId) return this.closeTrendValidation();
+            const item = app.data.items.find(i => i.id === this._pendingValidateItemId);
+            if (item) {
+                item.eisenhower = 'do';
+                app.saveData();
+                this.closeTrendValidation();
+                this.init();
+            } else {
+                this.closeTrendValidation();
+            }
+        });
+
+        if (this.validateNoBtn) this.validateNoBtn.addEventListener('click', () => this.closeTrendValidation());
+    },
+
+    isTrendValidationOpen() {
+        return this.validateOverlay && this.validateOverlay.style.display === 'flex';
+    },
+
+    openTrendValidation(item) {
+        // item can be object or id
+        if (!this.validateOverlay) this.bindTrendValidationModal();
+        if (!this.validateOverlay) return;
+
+        const it = typeof item === 'string' ? app.data.items.find(i => i.id === item) : item;
+        if (!it) return;
+
+        this._pendingValidateItemId = it.id;
+        if (this.validateItemNameEl) this.validateItemNameEl.textContent = it.name;
+
+        this.validateOverlay.style.display = 'flex';
+        this.validateOverlay.setAttribute('aria-hidden', 'false');
+
+        // Focus primary action
+        setTimeout(() => { if (this.validateYesBtn) this.validateYesBtn.focus(); }, 0);
+    },
+
+    closeTrendValidation() {
+        if (!this.validateOverlay) return;
+        this.validateOverlay.style.display = 'none';
+        this.validateOverlay.setAttribute('aria-hidden', 'true');
+        this._pendingValidateItemId = null;
+    },
+
+    ensureTrend(item) {
+        if (typeof item.trend !== 'number' || isNaN(item.trend)) item.trend = 1;
+        // Clamp to 1..10
+        item.trend = Math.max(1, Math.min(10, Math.round(item.trend)));
+    },
+
     renderSource() {
         const source = document.getElementById('eis-source');
         source.innerHTML = '';
-        
+
         app.data.items.forEach(item => {
             if(!item.eisenhower) {
                 const el = document.createElement('div');
@@ -3211,6 +3342,7 @@ const eisenhower = {
             }
         });
     },
+
     renderMatrix() {
         // Clear quadrants except titles
         ['do','plan','delegate','eliminate'].forEach(q => {
@@ -3219,28 +3351,109 @@ const eisenhower = {
             const title = el.querySelector('.quadrant-title');
             el.innerHTML = '';
             el.appendChild(title);
-            
+
             // Add items
             app.data.items.filter(i => i.eisenhower === q).forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'drag-item';
-                div.textContent = item.name;
                 div.draggable = true;
                 div.dataset.itemId = item.id;
+
                 // Allow dragging back out or between quadrants
                 div.ondragstart = (e) => { e.dataTransfer.setData('itemId', item.id); };
+
+                if (q === 'plan') {
+                    this.ensureTrend(item);
+
+                    div.classList.add('eis-plan-item');
+                    if (item.trend >= 6) div.classList.add('eis-incandescent');
+
+                    // Title
+                    const titleEl = document.createElement('div');
+                    titleEl.textContent = item.name;
+
+                    // Trend control (1..10)
+                    const trendWrap = document.createElement('div');
+                    trendWrap.className = 'eis-trend';
+
+                    const meta = document.createElement('div');
+                    meta.className = 'eis-trend-meta';
+                    meta.innerHTML = 'Tendance <span class="eis-trend-value" data-trend-value="1"></span>';
+
+                    const valueEl = meta.querySelector('[data-trend-value]');
+                    const setValueLabel = (v) => { if (valueEl) valueEl.textContent = `${v}/10`; };
+                    setValueLabel(item.trend);
+
+                    const input = document.createElement('input');
+                    input.type = 'range';
+                    input.min = '1';
+                    input.max = '10';
+                    input.step = '1';
+                    input.value = String(item.trend);
+                    input.setAttribute('aria-label', 'Tendance (aggravation) de 1 à 10');
+
+                    // Track threshold crossings
+                    let last = item.trend;
+
+                    const onUpdate = () => {
+                        const v = Math.max(1, Math.min(10, parseInt(input.value, 10) || 1));
+                        setValueLabel(v);
+
+                        // Persist
+                        this.ensureTrend(item);
+                        const prev = item.trend;
+                        item.trend = v;
+                        app.saveData();
+
+                        // Visual state
+                        div.classList.toggle('eis-incandescent', v >= 6);
+
+                        // Trigger validation when crossing into "forte" (>=6)
+                        if (prev < 6 && v >= 6) {
+                            this.openTrendValidation(item);
+                        }
+
+                        last = v;
+                    };
+
+                    input.addEventListener('input', onUpdate);
+                    input.addEventListener('change', onUpdate);
+
+                    trendWrap.appendChild(meta);
+                    trendWrap.appendChild(input);
+
+                    div.appendChild(titleEl);
+                    div.appendChild(trendWrap);
+                } else {
+                    // Q1/Q3/Q4 unchanged: simple static item
+                    div.textContent = item.name;
+                }
+
                 el.appendChild(div);
             });
         });
     },
+
     drop(e, quadrant) {
         e.preventDefault();
         const id = e.dataTransfer.getData('itemId');
         const item = app.data.items.find(i => i.id === id);
         if(item) {
             item.eisenhower = quadrant;
+
+            // In Q2, trend exists (default 1)
+            if (quadrant === 'plan') {
+                this.ensureTrend(item);
+            }
+
             app.saveData();
             this.init();
+
+            // If anomaly already true on drop, validate
+            if (quadrant === 'plan') {
+                this.ensureTrend(item);
+                if (item.trend >= 6) this.openTrendValidation(item);
+            }
         }
     }
 };
@@ -4028,6 +4241,27 @@ document.addEventListener('DOMContentLoaded', () => {
       <button class="nav-btn" type="button" onclick="app.exportPptx()">📽️ Exporter PPTX</button>
     </div>
   </div>
+
+<!-- EISENHOWER VALIDATION MODAL (Q2 + Tendance forte) -->
+<div id="eis-validate-overlay" class="eis-modal-overlay eis-validate-overlay" aria-hidden="true">
+  <div class="eis-modal" role="dialog" aria-modal="true" aria-labelledby="eis-validate-title">
+    <div class="eis-modal-header">
+      <div>
+        <h3 id="eis-validate-title" class="eis-modal-title">Êtes-vous sûr que cela peut attendre ?</h3>
+        <p class="eis-modal-sub">Anomalie détectée : <strong>Important</strong> en <strong>Planifier</strong> avec une <strong>Tendance forte</strong> (aggravation).</p>
+      </div>
+      <div class="eis-modal-actions">
+        <button type="button" class="eis-modal-btn" id="eis-validate-no">Non, je garde en Planifier</button>
+        <button type="button" class="eis-modal-btn primary" id="eis-validate-yes">Oui, passer en Prioritaire</button>
+      </div>
+    </div>
+    <div class="eis-validate-body">
+      <p class="eis-validate-item">Élément : <span id="eis-validate-item"></span></p>
+      <p class="eis-validate-msg">Si la tendance d’aggravation est forte, cet élément risque de basculer rapidement vers <strong>Urgent & Important</strong>. Voulez-vous le passer en Prioritaire dès maintenant ?</p>
+    </div>
+  </div>
+</div>
+
 </div>
 
 </body>
