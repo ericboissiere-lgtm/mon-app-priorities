@@ -686,6 +686,7 @@ body.eis-modal-open{ overflow: hidden; }
     padding-top: 8mm !important;
   }
   .print-cover.cover-2026 .cover-img{
+    display: none !important;
     width: 100%;
     max-height: 170mm;
     object-fit: contain;
@@ -693,7 +694,7 @@ body.eis-modal-open{ overflow: hidden; }
     border: 0 !important;
   }
   .print-cover.cover-2026 .cover-message{
-    margin: 0;
+    margin: 22mm 0 0 0;
     font-size: 12pt;
     line-height: 1.55;
     color: #111;
@@ -709,22 +710,29 @@ body.eis-modal-open{ overflow: hidden; }
 /* --- Anti-débordement cover PDF (Option A) : localisé à la cover uniquement --- */
 @media print {
   .print-cover.cover-2026 {
+    /* Empêche tout débordement de la cover (évite une page blanche après) */
+    min-height: 0 !important;
+    height: auto !important;
     break-inside: avoid;
     page-break-inside: avoid;
   }
   .print-cover.cover-2026 .cover-img {
+    display: none !important;
     max-height: 150mm;
     margin: 6mm 0 4mm;
   }
   /* Neutralise les tailles inline trop grandes, sans toucher au reste du document */
-  .print-cover.cover-2026 .cover-message > div:nth-child(1) {
+  .print-cover.cover-2026 .cover-message{
+    text-align: center !important;
+  }
+  .print-cover.cover-2026 .cover-message > div{
     font-size: 32pt !important;
     line-height: 1.05 !important;
-    margin-bottom: 3mm !important;
+    font-weight: 800 !important;
+    margin: 0 !important;
   }
-  .print-cover.cover-2026 .cover-message > div:nth-child(2) {
-    font-size: 14pt !important;
-    line-height: 1.35 !important;
+  .print-cover.cover-2026 .cover-message > div + div{
+    margin-top: 3mm !important;
   }
 }
 
@@ -963,6 +971,33 @@ button, .nav-btn, .action-btn, a { touch-action: manipulation; -webkit-tap-highl
 .eis-validate-actions{ display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; padding: 0 22px 18px 22px; }
 </style>
 
+
+<!-- HISTORY OVERLAY -->
+<div id="history-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal-content" style="max-width: 780px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+      <h2 style="margin:0;">Historique de l’analyse</h2>
+      <button id="btn-close-history" class="nav-btn" type="button">Fermer</button>
+    </div>
+    <p class="text-muted" style="margin-top:6px;">Chaque étape correspond à un état sauvegardé automatiquement. Les versions passées s’ouvrent en lecture seule.</p>
+    <div id="history-list" style="display:flex; flex-direction:column; gap:10px; margin-top:14px;"></div>
+  </div>
+</div>
+
+<!-- CORRECTION CHOICE OVERLAY -->
+<div id="correct-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal-content" style="max-width: 720px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+      <h2 style="margin:0;">Corriger l’analyse</h2>
+      <button id="btn-close-correct" class="nav-btn" type="button">Fermer</button>
+    </div>
+    <p class="text-muted" style="margin-top:6px;">Une nouvelle version sera créée. Les versions précédentes resteront disponibles.</p>
+    <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:14px;">
+      <button id="btn-correct-from-start" class="action-btn nav-btn" type="button">🔁 Reprendre l’analyse depuis le début</button>
+      <button id="btn-correct-only-eisenhower" class="nav-btn" style="border-color:var(--accent-secondary); color: var(--accent-secondary);" type="button">🎯 Corriger uniquement la matrice Eisenhower</button>
+    </div>
+  </div>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
@@ -972,7 +1007,7 @@ button, .nav-btn, .action-btn, a { touch-action: manipulation; -webkit-tap-highl
 
 <!-- NAVIGATION -->
 <nav>
-  <div class="nav-brand">⚡ Priorités Stratégiques</div>
+  <div class="nav-brand">⚡ Priorités Stratégiques<div id="analysis-meta" style="font-size:0.78rem; font-weight:400; margin-top:2px; color: var(--text-muted); background:none; -webkit-background-clip: initial; -webkit-text-fill-color: var(--text-muted);"></div></div>
   <div class="nav-links">
     <button class="nav-btn active" type="button" data-action="nav" data-target="home">Accueil</button>
     <button class="nav-btn" type="button" data-action="nav" data-target="input">1. Saisie (Données)</button>
@@ -984,11 +1019,25 @@ button, .nav-btn, .action-btn, a { touch-action: manipulation; -webkit-tap-highl
   </div>
   <div style="display:flex; gap:10px;">
     <button class="nav-btn action-btn print-btn" type="button" data-action="open-export">🖨️ PDF / Export</button>
-    <button id="btn-correct-reexport" class="nav-btn" style="display:none; border-color:var(--accent-secondary); color: var(--accent-secondary);" type="button" data-action="nav-scroll" data-target="eisenhower">✏️ Corriger avant re-export</button>
+    <button id="btn-history" class="nav-btn" type="button" data-action="open-history">🕒 Historique</button>
+    <button id="btn-correct-reexport" class="nav-btn" style="display:none; border-color:var(--accent-secondary); color: var(--accent-secondary);" type="button" data-action="nav-scroll" data-target="eisenhower">🛠️ Corriger l’analyse</button>
     <button class="nav-btn" type="button" data-action="reset-all" aria-label="Tout effacer">🗑️</button>
     <button class="nav-btn" type="button" data-action="toggle-help">?</button>
   </div>
 </nav>
+<div id="readonly-banner" style="display:none; position:sticky; top:72px; z-index:99; background: rgba(99,102,241,0.10); border-bottom:1px solid rgba(99,102,241,0.35); padding:10px 16px; backdrop-filter: blur(8px);">
+  <div style="display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
+    <div style="color: var(--text-main);">
+      🔒 <strong>Version précédente (lecture seule)</strong>
+      <span class="text-muted" id="readonly-banner-meta" style="margin-left:8px;"></span>
+    </div>
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <button id="btn-exit-readonly" class="nav-btn" type="button">Revenir à la version actuelle</button>
+      <button id="btn-restart-from-readonly" class="nav-btn" style="border-color:var(--accent-secondary); color: var(--accent-secondary);" type="button">🔁 Repartir depuis cette version</button>
+    </div>
+  </div>
+</div>
+
 
 <div class="container">
 
@@ -1098,7 +1147,207 @@ button, .nav-btn, .action-btn, a { touch-action: manipulation; -webkit-tap-highl
             <div style="font-weight:800; letter-spacing:0.2px;">Étape 4</div>
             <span class="badge" style="background:rgba(56,189,248,0.18); color:var(--text-main);">Export</span>
           </div>
-          <div class="tool-card" onclick="app.openExportDialog()">
+          <div class="tool-card" onclick="app.
+    /* --- HISTORY / CORRECTION UX --- */
+    openHistoryDialog() {
+        const overlay = document.getElementById('history-overlay');
+        if(!overlay) return;
+        this.renderHistoryList();
+        overlay.style.display = 'flex';
+    },
+
+    closeHistoryDialog() {
+        const overlay = document.getElementById('history-overlay');
+        if(overlay) overlay.style.display = 'none';
+    },
+
+    openCorrectDialog() {
+        const overlay = document.getElementById('correct-overlay');
+        if(!overlay) return;
+        overlay.style.display = 'flex';
+    },
+
+    closeCorrectDialog() {
+        const overlay = document.getElementById('correct-overlay');
+        if(overlay) overlay.style.display = 'none';
+    },
+
+    renderHistoryList() {
+        const list = document.getElementById('history-list');
+        if(!list) return;
+        list.innerHTML = '';
+        if(!this.folder) this._migrateLegacyIfNeeded();
+        const snaps = Array.isArray(this.folder.snapshots) ? this.folder.snapshots.slice().reverse() : [];
+
+        const meta = this.getVersionMeta();
+        // Current draft entry
+        const currentRow = document.createElement('div');
+        currentRow.className = 'card';
+        currentRow.style.padding = '12px';
+        currentRow.innerHTML = `
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+            <div>
+              <div style="font-weight:700;">✏️ Version en cours</div>
+              <div class="text-muted" style="margin-top:2px;">${meta.v} · ${meta.stamp}</div>
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+              <button class="nav-btn" type="button" data-action="go-current">Ouvrir</button>
+            </div>
+          </div>
+        `;
+        list.appendChild(currentRow);
+        currentRow.querySelector('[data-action="go-current"]').addEventListener('click', () => {
+            this.exitReadOnly();
+            this.closeHistoryDialog();
+        });
+
+        if(!snaps.length) {
+            const empty = document.createElement('div');
+            empty.className = 'text-muted';
+            empty.style.marginTop = '10px';
+            empty.textContent = "Aucune version précédente pour le moment.";
+            list.appendChild(empty);
+            return;
+        }
+
+        snaps.forEach(s => {
+            const row = document.createElement('div');
+            row.className = 'card';
+            row.style.padding = '12px';
+            const stamp = this._formatStamp(s.createdAt);
+            row.innerHTML = `
+              <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                  <div style="font-weight:700;">${s.label || 'Version'}</div>
+                  <div class="text-muted" style="margin-top:2px;">v${s.versionNumber} · ${stamp}</div>
+                </div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                  <button class="nav-btn" type="button" data-action="open-ro">👁️ Ouvrir (lecture seule)</button>
+                  <button class="nav-btn" style="border-color:var(--accent-secondary); color: var(--accent-secondary);" type="button" data-action="restart">🔁 Repartir depuis ici</button>
+                </div>
+              </div>
+            `;
+            list.appendChild(row);
+            row.querySelector('[data-action="open-ro"]').addEventListener('click', () => {
+                this.openReadOnly(s.id);
+                this.closeHistoryDialog();
+            });
+            row.querySelector('[data-action="restart"]').addEventListener('click', () => {
+                this.restartFromSnapshot(s.id);
+                this.closeHistoryDialog();
+            });
+        });
+    },
+
+    openReadOnly(snapshotId) {
+        if(!this.folder) this._migrateLegacyIfNeeded();
+        const snap = (Array.isArray(this.folder.snapshots) ? this.folder.snapshots : []).find(s => s.id === snapshotId);
+        if(!snap) return;
+        this.readOnly = true;
+        this.readOnlySnapshotId = snapshotId;
+        this.data = this._deepCopy(snap.data);
+        this.renderNav();
+        this.renderItems();
+        // Update views that rely on init on enter
+        lessTen.init(); moreTen.init(); eisenhower.init(); impactEffort.init();
+        this._applyReadOnlyUI(true);
+        const banner = document.getElementById('readonly-banner');
+        const meta = document.getElementById('readonly-banner-meta');
+        if(meta) meta.textContent = `v${snap.versionNumber} · ${this._formatStamp(snap.createdAt)} — ${snap.label || ''}`;
+        if(banner) banner.style.display = 'block';
+        window.scrollTo(0,0);
+    },
+
+    exitReadOnly() {
+        // Restore current draft
+        this.readOnly = false;
+        this.readOnlySnapshotId = null;
+        if(this.folder && this.folder.current && this.folder.current.data) {
+            this.data = this.folder.current.data;
+        }
+        this.renderNav();
+        this.renderItems();
+        lessTen.init(); moreTen.init(); eisenhower.init(); impactEffort.init();
+        this._applyReadOnlyUI(false);
+        const banner = document.getElementById('readonly-banner');
+        if(banner) banner.style.display = 'none';
+        this._updateMetaUI();
+    },
+
+    restartFromReadOnly() {
+        if(!this.readOnly || !this.readOnlySnapshotId) return;
+        this.restartFromSnapshot(this.readOnlySnapshotId);
+    },
+
+    restartFromSnapshot(snapshotId) {
+        if(!this.folder) this._migrateLegacyIfNeeded();
+        const snap = (Array.isArray(this.folder.snapshots) ? this.folder.snapshots : []).find(s => s.id === snapshotId);
+        if(!snap) return;
+        // Create a snapshot marker then switch current draft to snapshot data (new version)
+        // First, finalize current draft as snapshot (if any) so nothing is lost
+        this._createSnapshot('✏️ Correction');
+        // Replace draft with the chosen snapshot data (as current)
+        this.data = this._deepCopy(snap.data);
+        if(this.folder && this.folder.current) {
+            this.folder.current.data = this._deepCopy(this.data);
+            this._saveFolder();
+        }
+        this.exitReadOnly();
+        this.nav('home');
+    },
+
+    startCorrectionFlow(mode) {
+        this.closeCorrectDialog();
+        // Snapshot current state before starting correction
+        this._createSnapshot('✏️ Correction');
+        this.readOnly = false;
+        this.readOnlySnapshotId = null;
+        this._applyReadOnlyUI(false);
+        const banner = document.getElementById('readonly-banner');
+        if(banner) banner.style.display = 'none';
+
+        if(mode === 'eisenhower') {
+            this.nav('eisenhower');
+        } else {
+            this.nav('home');
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+
+    _applyReadOnlyUI(isRO) {
+        // Disable inputs/buttons in main sections when read-only
+        document.querySelectorAll('.view-section').forEach(sec => {
+            sec.querySelectorAll('input, textarea, select, button').forEach(el => {
+                // Allow navigation & global controls
+                if(el.closest('nav')) return;
+                if(el.id === 'btn-exit-readonly' || el.id === 'btn-restart-from-readonly') return;
+                if(isRO) {
+                    if(!el.dataset._prevDisabled) el.dataset._prevDisabled = el.disabled ? '1' : '0';
+                    el.disabled = true;
+                } else {
+                    if(el.dataset._prevDisabled) {
+                        el.disabled = (el.dataset._prevDisabled === '1');
+                        delete el.dataset._prevDisabled;
+                    } else {
+                        el.disabled = false;
+                    }
+                }
+            });
+            // disable draggable items if any
+            sec.querySelectorAll('[draggable="true"]').forEach(el => {
+                if(isRO) {
+                    el.dataset._prevDraggable = 'true';
+                    el.setAttribute('draggable','false');
+                } else {
+                    if(el.dataset._prevDraggable === 'true') {
+                        el.setAttribute('draggable','true');
+                        delete el.dataset._prevDraggable;
+                    }
+                }
+            });
+        });
+    },
+openExportDialog()">
             <span class="card-icon">🖨️</span>
             <div class="card-title">Édition du PDF</div>
             <div class="card-desc">Générez un rapport propre (page de garde + chapitres) prêt à partager.</div>
@@ -1324,7 +1573,7 @@ Vos arbitrages défavorisés se retrouvant mécaniquement en bas du classement e
         <div class="quadrant-title">🗣️ Urgent & Pas Important (DÉLÉGUER)<span class="eis-title-actions"><button type="button" class="qt-btn-orange" data-eis-action="raci">RACI</button></span></div>
       </div>
       <div class="quadrant q-4" id="q-eliminate" ondragover="allowDrop(event)" ondrop="eisenhower.drop(event, 'eliminate')">
-        <div class="quadrant-title">🗑️ Ni Urgent, Ni Important (ÉLIMINER)<span class="eis-title-actions"><button type="button" class="qt-btn-orange" data-eis-action="renoncements">RENOncements</button></span></div>
+        <div class="quadrant-title">🗑️ Ni Urgent, Ni Important (MÉMORISER)<span class="eis-title-actions"><button type="button" class="qt-btn-orange" data-eis-action="renoncements">RENOncements</button></span></div>
       </div>
     </div>
   </section>
@@ -1767,17 +2016,35 @@ const app = {
         if(typeof this.data.mt10Results === 'undefined') this.data.mt10Results = null;
         this.renderNav();
         this.renderItems();
-        // Bind "Corriger avant re-export" button (visible only after PDF export)
+                // Bind correction button (shown after export)
         const _correctBtn = document.getElementById('btn-correct-reexport');
         if(_correctBtn && !_correctBtn.dataset.bound){
             _correctBtn.addEventListener('click', () => {
-                this.nav('eisenhower');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+                this.openCorrectDialog();
             });
             _correctBtn.dataset.bound = '1';
         }
 
-        
+        // Bind history button
+        const _histBtn = document.getElementById('btn-history');
+        if(_histBtn && !_histBtn.dataset.bound){
+            _histBtn.addEventListener('click', () => this.openHistoryDialog());
+            _histBtn.dataset.bound = '1';
+        }
+
+        // Bind overlays close buttons
+        const _closeHist = document.getElementById('btn-close-history');
+        if(_closeHist) _closeHist.addEventListener('click', () => this.closeHistoryDialog());
+        const _closeCorrect = document.getElementById('btn-close-correct');
+        if(_closeCorrect) _closeCorrect.addEventListener('click', () => this.closeCorrectDialog());
+        const _btnCorrectStart = document.getElementById('btn-correct-from-start');
+        if(_btnCorrectStart) _btnCorrectStart.addEventListener('click', () => this.startCorrectionFlow('start'));
+        const _btnCorrectEis = document.getElementById('btn-correct-only-eisenhower');
+        if(_btnCorrectEis) _btnCorrectEis.addEventListener('click', () => this.startCorrectionFlow('eisenhower'));
+        const _exitRO = document.getElementById('btn-exit-readonly');
+        if(_exitRO) _exitRO.addEventListener('click', () => this.exitReadOnly());
+        const _restartRO = document.getElementById('btn-restart-from-readonly');
+        if(_restartRO) _restartRO.addEventListener('click', () => this.restartFromReadOnly());
         // Show tutorial if first visit
         if(!localStorage.getItem('gp_visited')) {
             document.getElementById('tutorial-overlay').style.display = 'flex';
@@ -1785,6 +2052,25 @@ const app = {
     },
 
     nav(viewId) {
+        // Snapshots automatiques par étape (sans bloquer le flux)
+        try {
+            const prevActive = document.querySelector('.view-section.active');
+            const prevId = prevActive ? prevActive.id.replace('view-','') : null;
+
+            // Priorités définies -> entrée Eisenhower
+            if((prevId === 'less10' || prevId === 'more10') && viewId === 'eisenhower' && !this.readOnly) {
+                this._createSnapshot('🎯 Priorités définies');
+            }
+            // Eisenhower validée -> sortie Eisenhower
+            if(prevId === 'eisenhower' && viewId !== 'eisenhower' && !this.readOnly) {
+                this._createSnapshot('🧠 Eisenhower validée');
+            }
+            // Synthèse prête -> entrée Hezitator
+            if(viewId === 'hezitator' && prevId !== 'hezitator' && !this.readOnly) {
+                this._createSnapshot('📝 Synthèse prête');
+            }
+        } catch(e) {}
+
         // Switch tabs CSS
         document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
         document.getElementById('view-' + viewId).classList.add('active');
@@ -1939,18 +2225,161 @@ addItem() {
 
     },
 
-    saveData() {
-        localStorage.setItem('priorityApp_v2', JSON.stringify(this.data));
+    
+    /* --- VERSIONING & STORAGE (Snapshots) --- */
+    storageLegacyKey: 'priorityApp_v2',
+    storageFolderKey: 'priorityApp_folder_v1',
+    folder: null, // {analysisId, current:{versionNumber,createdAt,data}, snapshots:[{id,versionNumber,createdAt,label,data}]}
+    readOnly: false,
+    readOnlySnapshotId: null,
+
+    _deepCopy(obj) {
+        try { return JSON.parse(JSON.stringify(obj)); } catch(e) { return obj; }
     },
 
-    loadData() {
-        const stored = localStorage.getItem('priorityApp_v2');
-        if (stored) {
-            this.data = JSON.parse(stored);
+    _nowStamp() {
+        const d = new Date();
+        const pad2 = (n) => String(n).padStart(2,'0');
+        return `${pad2(d.getDate())}/${pad2(d.getMonth()+1)}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    },
+
+    _formatStamp(ts) {
+        const d = new Date(ts);
+        const pad2 = (n) => String(n).padStart(2,'0');
+        return `${pad2(d.getDate())}/${pad2(d.getMonth()+1)}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    },
+
+    _loadFolder() {
+        try {
+            const raw = localStorage.getItem(this.storageFolderKey);
+            if(raw) return JSON.parse(raw);
+        } catch(e) {}
+        return null;
+    },
+
+    _saveFolder() {
+        try {
+            if(!this.folder) return;
+            localStorage.setItem(this.storageFolderKey, JSON.stringify(this.folder));
+        } catch(e) {
+            console.warn('Impossible de sauvegarder (stockage plein ?)', e);
         }
     },
 
-    resetData(context) {
+    _migrateLegacyIfNeeded() {
+        // If folder exists, nothing to do
+        const existing = this._loadFolder();
+        if(existing && existing.current && existing.current.data) {
+            this.folder = existing;
+            return;
+        }
+        // Try legacy
+        const legacyRaw = localStorage.getItem(this.storageLegacyKey);
+        if(legacyRaw) {
+            try {
+                const legacyData = JSON.parse(legacyRaw);
+                const now = Date.now();
+                this.folder = {
+                    analysisId: String(now) + '-' + Math.random().toString(16).slice(2),
+                    current: { versionNumber: 1, createdAt: now, data: legacyData },
+                    snapshots: []
+                };
+                this._saveFolder();
+                return;
+            } catch(e) {}
+        }
+        // Fresh start
+        const now = Date.now();
+        this.folder = {
+            analysisId: String(now) + '-' + Math.random().toString(16).slice(2),
+            current: { versionNumber: 1, createdAt: now, data: this.data },
+            snapshots: []
+        };
+        this._saveFolder();
+    },
+
+    getVersionMeta() {
+        if(!this.folder || !this.folder.current) return { v:'v1', stamp:this._nowStamp() };
+        return { v: 'v' + String(this.folder.current.versionNumber || 1), stamp: this._formatStamp(this.folder.current.createdAt || Date.now()) };
+    },
+
+    _updateMetaUI() {
+        const metaEl = document.getElementById('analysis-meta');
+        if(!metaEl) return;
+        const m = this.getVersionMeta();
+        metaEl.textContent = `${m.v} · ${m.stamp}`;
+    },
+
+    
+    _createSnapshot(label, options = {}) {
+        const advance = !(options && options.advance === false);
+
+        if(!this.folder) this._migrateLegacyIfNeeded();
+        if(!this.folder || !this.folder.current) return;
+
+        const snap = {
+            id: String(Date.now()) + '-' + Math.random().toString(16).slice(2),
+            versionNumber: this.folder.current.versionNumber || 1,
+            createdAt: Date.now(),
+            label: label || 'Snapshot',
+            data: this._deepCopy(this.data)
+        };
+
+        // Dedup simple: if last snapshot has same label + same data, skip
+        const last = Array.isArray(this.folder.snapshots) && this.folder.snapshots.length ? this.folder.snapshots[this.folder.snapshots.length-1] : null;
+        try {
+            if(last && last.label === snap.label && JSON.stringify(last.data) === JSON.stringify(snap.data)) return;
+        } catch(e) {}
+
+        this.folder.snapshots = Array.isArray(this.folder.snapshots) ? this.folder.snapshots : [];
+        this.folder.snapshots.push(snap);
+
+        if(advance) {
+            // Create a new editable draft version cloned from current state
+            const now = Date.now();
+            this.folder.current = {
+                versionNumber: snap.versionNumber + 1,
+                createdAt: now,
+                data: this._deepCopy(this.data)
+            };
+        } else {
+            // Keep current draft as-is, but ensure it's saved
+            this.folder.current.data = this._deepCopy(this.data);
+        }
+
+        this._saveFolder();
+        this._updateMetaUI();
+    },
+
+
+    _setDraftData(dataObj) {
+        this.data = dataObj || this.data;
+        if(this.folder && this.folder.current) {
+            this.folder.current.data = this._deepCopy(this.data);
+            this._saveFolder();
+        }
+        this._updateMetaUI();
+    },
+
+    saveData() {
+        // Save only if not in read-only mode
+        if(this.readOnly) return;
+        if(!this.folder) this._migrateLegacyIfNeeded();
+        if(!this.folder.current) this.folder.current = { versionNumber: 1, createdAt: Date.now(), data: this.data };
+        this.folder.current.data = this._deepCopy(this.data);
+        this._saveFolder();
+        this._updateMetaUI();
+    },
+
+    loadData() {
+        this._migrateLegacyIfNeeded();
+        if(this.folder && this.folder.current && this.folder.current.data) {
+            this.data = this.folder.current.data;
+        }
+        this._updateMetaUI();
+    },
+
+resetData(context) {
         if(context === 'eisenhower') {
             if(confirm('Réinitialiser le placement matrix Eisenhower ?')) {
                 this.data.items.forEach(i => i.eisenhower = null);
@@ -1959,7 +2388,8 @@ addItem() {
             }
         } else {
             if(confirm('ATTENTION : Ceci effacera TOUTES vos données et priorités. Continuer ?')) {
-                localStorage.removeItem('priorityApp_v2');
+                localStorage.removeItem(this.storageLegacyKey);
+                localStorage.removeItem(this.storageFolderKey);
                 location.reload();
             }
         }
@@ -2172,6 +2602,9 @@ addItem() {
             const inp = document.getElementById('export-report-title');
             const reportTitle = (cb && cb.checked && inp) ? String(inp.value || '').trim() : '';
             this.closeExportDialog();
+            // Snapshot export (PPTX) sans changer la version en cours
+            if(!this.readOnly) this._createSnapshot('📤 Export PPTX', { advance: false });
+
 
             // Helper: capture an element as PNG dataURL
             const capture = async (el) => {
@@ -2197,6 +2630,8 @@ addItem() {
             const now = new Date();
             const pad2 = (n) => String(n).padStart(2,'0');
             const stamp = `${pad2(now.getDate())}/${pad2(now.getMonth()+1)}/${now.getFullYear()} ${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+            const vmeta = this.getVersionMeta ? this.getVersionMeta() : { v:'v1', stamp: stamp };
+
 
             // Prepare slides
             const pptx = new PptxGenJS();
@@ -2218,7 +2653,7 @@ addItem() {
                         s.addText(_titleToRender, { x:0.6, y:1.55, w:12.0, h:0.85, fontSize:28, bold:true, color:"38BDF8", align:"center" });
                     }
                 }
-                s.addText(`Date : ${stamp}  •  Nombre de priorités : ${items.length}`, { x:0.6, y:6.7, w:12.0, h:0.4, fontSize:14, color:"CBD5E1" });
+                s.addText(`Date : ${stamp}  •  Version : ${vmeta.v}  •  Nombre de priorités : ${items.length}`, { x:0.6, y:6.7, w:12.0, h:0.4, fontSize:14, color:"CBD5E1" });
                 s.background = { color: "0F172A" };
             }
 
@@ -2317,6 +2752,9 @@ addItem() {
 
     printReport(style = "comex", reportTitle = "") {
         try {
+            // Snapshot export (PDF) sans changer la version en cours
+            if(!this.readOnly) this._createSnapshot('📤 Export PDF', { advance: false });
+
             this.buildPrintSnapshot(style, reportTitle);
             
             this.showCorrectBeforeReexportBtn();
@@ -2349,6 +2787,8 @@ addItem() {
         const now = new Date();
         const pad2 = (n) => String(n).padStart(2,'0');
         const stamp = `${pad2(now.getDate())}/${pad2(now.getMonth()+1)}/${now.getFullYear()} ${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+        const vmeta = this.getVersionMeta ? this.getVersionMeta() : { v:'v1', stamp: stamp };
+
 
         const el = (tag, cls, text) => {
             const n = document.createElement(tag);
@@ -2360,40 +2800,29 @@ addItem() {
         /* --- Cover (Page 1) --- */
         const cover = el('section', 'print-cover cover-2026', null);
 
-        // Image + message (2026)
-        const img = document.createElement('img');
-        img.className = 'cover-img';
-        img.alt = 'Hezitator';
-        img.src = COVER_2026_DATA_URI;
-        cover.appendChild(img);
+        // Message (2026)
 
                 const msg = document.createElement('div');
         msg.className = 'cover-message';
         const msgTitle = document.createElement('div');
-        msgTitle.textContent = 'Hezitator';
+        msgTitle.textContent = 'Priorités';
         msgTitle.style.fontSize = '40pt';
         msgTitle.style.fontWeight = '800';
         msgTitle.style.lineHeight = '1';
-        const msgSub = document.createElement('div');
-        msgSub.textContent = 'Dans le brouillard épais du chaos, le sens se dérobe : comment faire un pas en avant ?';
-        msgSub.style.fontSize = '18pt';
-        msgSub.style.fontWeight = '600';
-        msgSub.style.lineHeight = '1.2';
-        msgSub.style.marginTop = '12pt';
         msg.appendChild(msgTitle);
-        msg.appendChild(msgSub);
         if(reportTitle) {
             const rt = el('div', null, reportTitle);
-            rt.style.fontSize = '32pt';
-            rt.style.fontWeight = '900';
-            rt.style.lineHeight = '1.1';
-            rt.style.marginTop = '10pt';
-            rt.style.color = '#000000';
+            rt.style.fontSize = msgTitle.style.fontSize;
+            rt.style.fontWeight = msgTitle.style.fontWeight;
+            rt.style.lineHeight = msgTitle.style.lineHeight;
+            rt.style.marginTop = '8pt';
             msg.appendChild(rt);
         }
         cover.appendChild(msg);
 const meta = el('div', 'meta', null);
         meta.appendChild(el('div', null, `Date : ${stamp}`));
+        meta.appendChild(el('div', null, `Version : ${vmeta.v}`));
+
         meta.appendChild(el('div', null, `Nombre de priorités : ${items.length}`));
         cover.appendChild(meta);
         root.appendChild(cover);
@@ -2539,7 +2968,7 @@ Vos arbitrages défavorisés se retrouvant mécaniquement en bas du classement e
         grid.appendChild(buildQuad('q-1', '🔥 URGENT & IMPORTANT (FAIRE)', 'do'));
         grid.appendChild(buildQuad('q-2', '📅 PAS URGENT & IMPORTANT (PLANIFIER)', 'plan'));
         grid.appendChild(buildQuad('q-3', '🗣️ URGENT & PAS IMPORTANT (DÉLÉGUER)', 'delegate'));
-        grid.appendChild(buildQuad('q-4', '🗑️ NI URGENT, NI IMPORTANT (ÉLIMINER)', 'eliminate'));
+        grid.appendChild(buildQuad('q-4', '🗑️ NI URGENT, NI IMPORTANT (MÉMORISER)', 'eliminate'));
 
         c3.appendChild(grid);
         root.appendChild(c3);
