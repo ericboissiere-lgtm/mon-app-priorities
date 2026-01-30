@@ -186,6 +186,59 @@ input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
 .tuto-step { display: none; }
 .tuto-step.active { display: block; }
 
+
+/* --- RESPONSIVE COMFORT + COMPACT MODE (auto) --- */
+.modal-content{
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.export-modal{
+  display:flex;
+  flex-direction:column;
+  max-height: calc(100dvh - 36px);
+}
+.export-head, .export-actions{ flex: 0 0 auto; }
+.export-body{
+  flex: 1 1 auto;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.export-actions{
+  flex-wrap: wrap;
+}
+.export-actions .nav-btn{
+  flex: 1 1 auto;
+}
+h1, h2, h3, h4, p, .card, .item-card, .eis-card, .export-modal, .modal-content{
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Compact mode reduces vertical footprint on laptops/small heights */
+body.compact nav{ padding: 0.55rem 0.9rem; gap: 0.65rem; }
+body.compact .container{ padding: 1.2rem 1rem; }
+body.compact .hero-wrapper{ padding: 2.2rem 0.8rem; }
+body.compact .hero-title{ font-size: 2.15rem; }
+body.compact .hero-subtitle{ font-size: 1.0rem; margin-bottom: 1.8rem; }
+body.compact .nav-btn{ padding: 7px 12px; font-size: 0.95rem; }
+body.compact .nav-links{ gap: 0.4rem; }
+body.compact .grid-2{ gap: 14px; }
+body.compact .card{ padding: 16px; }
+body.compact textarea, body.compact input[type="text"]{ font-size: 0.98rem; }
+
+/* Small screens: avoid horizontal scroll in nav and keep dialogs usable */
+@media (max-width: 640px){
+  .nav-links{ flex-wrap: wrap; overflow-x: visible; }
+  .export-overlay{ padding: 10px; }
+  .export-modal{ width: min(820px, 98vw); }
+}
+@media (max-height: 720px){
+  .modal-overlay{ align-items: flex-start; }
+  .export-overlay{ align-items: flex-start; }
+}
+
 /* --- PRINT STYLE --- */
 @media print {
   /* Imprimer UNIQUEMENT le snapshot #print-root (isolation totale) */
@@ -1248,6 +1301,9 @@ button, .nav-btn, .action-btn, a { touch-action: manipulation; -webkit-tap-highl
         this.data = this._deepCopy(snap.data);
         this.renderNav();
         this.renderItems();
+        this.applyCompactMode();
+        window.addEventListener('resize', () => this.applyCompactMode());
+        window.addEventListener('orientationchange', () => this.applyCompactMode());
         // Update views that rely on init on enter
         lessTen.init(); moreTen.init(); eisenhower.init(); impactEffort.init();
         this._applyReadOnlyUI(true);
@@ -2051,6 +2107,25 @@ const app = {
         }
     },
 
+
+    applyCompactMode(){
+        try{
+            const mq = window.matchMedia('(max-height: 820px), (max-width: 1024px)');
+            const shouldCompact = !!mq.matches;
+            document.body.classList.toggle('compact', shouldCompact);
+
+            // Keep readonly banner correctly positioned under the sticky nav (nav can wrap on small widths)
+            const navEl = document.querySelector('nav');
+            const banner = document.getElementById('readonly-banner');
+            if(navEl && banner){
+                banner.style.top = navEl.offsetHeight + 'px';
+            }
+        }catch(e){
+            // Never block startup for responsive helpers
+            console.warn('compact mode skipped', e);
+        }
+    },
+
     nav(viewId) {
         // Snapshots automatiques par étape (sans bloquer le flux)
         try {
@@ -2232,6 +2307,25 @@ addItem() {
     folder: null, // {analysisId, current:{versionNumber,createdAt,data}, snapshots:[{id,versionNumber,createdAt,label,data}]}
     readOnly: false,
     readOnlySnapshotId: null,
+    maxSnapshots: 30,
+
+    _enforceRetention() {
+        if(!this.folder) return;
+        this.folder.snapshots = Array.isArray(this.folder.snapshots) ? this.folder.snapshots : [];
+        const max = Number(this.maxSnapshots) || 30;
+        if(this.folder.snapshots.length <= max) return;
+        // Keep the most recent snapshots; drop the oldest to avoid localStorage saturation.
+        this.folder.snapshots = this.folder.snapshots.slice(-max);
+
+        // If we were looking at a snapshot that got trimmed, exit read-only safely.
+        if(this.readOnlySnapshotId) {
+            const stillThere = this.folder.snapshots.some(s => s.id === this.readOnlySnapshotId);
+            if(!stillThere) {
+                this.readOnly = false;
+                this.readOnlySnapshotId = null;
+            }
+        }
+    },
 
     _deepCopy(obj) {
         try { return JSON.parse(JSON.stringify(obj)); } catch(e) { return obj; }
@@ -2333,6 +2427,7 @@ addItem() {
 
         this.folder.snapshots = Array.isArray(this.folder.snapshots) ? this.folder.snapshots : [];
         this.folder.snapshots.push(snap);
+        this._enforceRetention();
 
         if(advance) {
             // Create a new editable draft version cloned from current state
