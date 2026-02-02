@@ -1356,7 +1356,7 @@ Vos arbitrages défavorisés se retrouvant mécaniquement en bas du classement e
         <div class="quadrant-title">🗣️ Urgent & Pas Important (DÉLÉGUER)<span class="eis-title-actions"><button type="button" class="qt-btn-orange" data-eis-action="raci">RACI</button></span></div>
       </div>
       <div class="quadrant q-4" id="q-eliminate" ondragover="allowDrop(event)" ondrop="eisenhower.drop(event, 'eliminate')">
-        <div class="quadrant-title">🗑️ Ni Urgent, Ni Important (ÉLIMINER)<span class="eis-title-actions"><button type="button" class="qt-btn-orange" data-eis-action="renoncements">RENOncements</button></span></div>
+        <div class="quadrant-title">🗑️ Ni Urgent, Ni Important (MÉMORISER)<span class="eis-title-actions"><button type="button" class="qt-btn-orange" data-eis-action="renoncements">RENOncements</button></span></div>
       </div>
     </div>
   </section>
@@ -2340,7 +2340,7 @@ addItem() {
             q('do','Prioritaire (Urgent & Important)');
             q('plan','Planifier (Important, non urgent)');
             q('delegate','Déléguer (Urgent, peu important)');
-            q('eliminate','Éliminer (Ni urgent, ni important)');
+            q('eliminate','Mémoriser (Ni urgent, ni important)');
             lines.push('');
             lines.push('3) Impact / Effort (si renseigné)');
             const ie = items.filter(it => typeof it.impact === 'number' && typeof it.effort === 'number');
@@ -2750,7 +2750,7 @@ Vos arbitrages défavorisés se retrouvant mécaniquement en bas du classement e
         grid.appendChild(buildQuad('q-1', '🔥 URGENT & IMPORTANT (FAIRE)', 'do'));
         grid.appendChild(buildQuad('q-2', '📅 PAS URGENT & IMPORTANT (PLANIFIER)', 'plan'));
         grid.appendChild(buildQuad('q-3', '🗣️ URGENT & PAS IMPORTANT (DÉLÉGUER)', 'delegate'));
-        grid.appendChild(buildQuad('q-4', '🗑️ NI URGENT, NI IMPORTANT (ÉLIMINER)', 'eliminate'));
+        grid.appendChild(buildQuad('q-4', '🗑️ NI URGENT, NI IMPORTANT (MÉMORISER)', 'eliminate'));
 
         c3.appendChild(grid);
         root.appendChild(c3);
@@ -3743,8 +3743,8 @@ const eisTools = {
       this.subEl.textContent = 'Tableau d’action pour les éléments du cadran Planifier.';
       this.renderPlanning();
     } else if (type === 'renoncements') {
-      this.titleEl.textContent = 'Renoncements à mémoriser — ÉLIMINER';
-      this.subEl.textContent = 'Tracez les renoncements associés aux éléments éliminés.';
+      this.titleEl.textContent = 'Renoncements à mémoriser — MÉMORISER';
+      this.subEl.textContent = 'Tracez les renoncements associés aux éléments mémorisés.';
       this.renderRenoncements();
     } else {
       return;
@@ -3856,7 +3856,7 @@ const eisTools = {
 
   renderRenoncements() {
     const items = this.getItemsByQuadrant('eliminate');
-    if (!items.length) return this.renderEmpty('Aucun élément dans ce cadran (Éliminer).');
+    if (!items.length) return this.renderEmpty('Aucun élément dans ce cadran (Mémoriser).');
 
     const rows = items.map(item => {
       const saved = app.data.renoncementsByItemId[item.id] || {};
