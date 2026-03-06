@@ -1512,7 +1512,7 @@ Vos arbitrages défavorisés se retrouvant mécaniquement en bas du classement e
         <div class="quadrant-title">🗣️ Urgent & Pas Important (DÉLÉGUER)<span class="eis-title-actions"><button type="button" class="qt-btn-orange" data-eis-action="raci">RACI</button></span></div>
       </div>
       <div class="quadrant q-4" id="q-eliminate" ondragover="allowDrop(event)" ondrop="eisenhower.drop(event, 'eliminate')">
-        <div class="quadrant-title">🗑️ Ni Urgent, Ni Important (MÉMORISER)<span class="eis-title-actions"><button type="button" class="qt-btn-orange" data-eis-action="renoncements">RENOncements</button></span></div>
+        <div class="quadrant-title">🗑️ Ni Urgent, Ni Important (non critique)<span class="eis-title-actions"><button type="button" class="qt-btn-orange" data-eis-action="renoncements">MÉMORISER</button></span></div>
       </div>
     </div>
   </section>
@@ -1975,19 +1975,37 @@ const safeStorage = (() => {
 
 (function setupViewportHeightVar(){
   const docEl = document.documentElement;
-  const setVh = () => {
+
+  function computeHeight(){
     // Prefer visualViewport (best for iOS address bar + keyboard), fallback to innerHeight.
-    const h = (window.visualViewport && window.visualViewport.height) ? window.visualViewport.height : window.innerHeight;
-    const vh = Math.max(320, h) * 0.01;
+    const vv = window.visualViewport;
+    const h = (vv && vv.height) ? vv.height : window.innerHeight;
+    return Math.max(320, h);
+  }
+
+  function setVh(){
+    const vh = computeHeight() * 0.01;
     docEl.style.setProperty('--vh', `${vh}px`);
-  };
+  }
+
+  // Initial
   setVh();
+
+  // Resize/orientation
   window.addEventListener('resize', setVh, { passive: true });
   window.addEventListener('orientationchange', () => setTimeout(setVh, 250), { passive: true });
+
+  // iOS/Android dynamic viewport + keyboard
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', setVh, { passive: true });
     window.visualViewport.addEventListener('scroll', setVh, { passive: true });
   }
+  window.addEventListener('focusin', () => setTimeout(setVh, 60), { passive: true });
+  window.addEventListener('focusout', () => setTimeout(setVh, 60), { passive: true });
+
+  // Safety: tab switching / app backgrounding
+  window.addEventListener('visibilitychange', () => setTimeout(setVh, 60), { passive: true });
+  window.addEventListener('pagehide', () => setTimeout(setVh, 60), { passive: true });
 })();
 
 
@@ -2024,7 +2042,8 @@ const app = {
         // Show tutorial if first visit
         if(!safeStorage.get('gp_visited')) {
             document.getElementById('tutorial-overlay').style.display = 'flex';
-        this.lockScroll();
+            this.lockScroll();
+            try{ this._overlayPush('tutorial', ()=>this.closeTuto(true)); }catch(e){}
         }
     },
     /* --- iOS/Android: prevent background scroll when overlays open --- */
@@ -2051,6 +2070,39 @@ const app = {
         }catch(e){}
     },
 
+
+    /* --- Mobile: overlay stack + Android back button closing (no UI change) --- */
+    _overlayStack: [],
+    _handlingPopstate: false,
+    _initOverlayHistory() {
+        if (this._overlayHistoryBound) return;
+        this._overlayHistoryBound = true;
+        window.addEventListener('popstate', () => {
+            if (!this._overlayStack.length) return;
+            const top = this._overlayStack.pop();
+            this._handlingPopstate = true;
+            try { top?.close?.(true); } catch(e) {}
+            this._handlingPopstate = false;
+        });
+    },
+    _overlayPush(name, closeFn) {
+        try { this._initOverlayHistory(); } catch(e) {}
+        if (this._handlingPopstate) return;
+        // Avoid duplicates
+        const top = this._overlayStack[this._overlayStack.length - 1];
+        if (top && top.name === name) return;
+        this._overlayStack.push({ name, close: closeFn });
+        try { history.pushState({ __gpOverlay: true, name, depth: this._overlayStack.length }, ''); } catch(e) {}
+    },
+    _overlayCloseByUI(name) {
+        if (this._handlingPopstate) return;
+        const top = this._overlayStack[this._overlayStack.length - 1];
+        if (!top || top.name !== name) return;
+        this._overlayStack.pop();
+        try {
+            if (history.state && history.state.__gpOverlay) history.back();
+        } catch(e) {}
+    },
 
     nav(viewId) {
         // Switch tabs CSS
@@ -2348,17 +2400,11 @@ addItem() {
         this.applyNewDataset(newItems);
 
         if(isRich) {
-            let cursor = 0;
-            this.data.groups = richGroupDefs.map((g, gIdx) => {
-                const count = Array.isArray(g.items) ? g.items.length : 0;
-                const itemIds = newItems.slice(cursor, cursor + count).map(it => it.id);
-                cursor += count;
-                return {
-                    id: `example-group-${gIdx + 1}-${Date.now()}-${Math.floor(Math.random()*1000)}`,
-                    name: g.name,
-                    itemIds
-                };
-            });
+            this.data.groups = richGroupDefs.map((g, gIdx) => ({
+                id: `example-group-${gIdx + 1}-${Date.now()}-${Math.floor(Math.random()*1000)}`,
+                name: g.name,
+                itemIds: []
+            }));
             this.saveData();
         }
     },
@@ -2416,9 +2462,10 @@ addItem() {
         document.getElementById('tuto-step-'+step).classList.add('active');
     },
     
-    closeTuto() {
+    closeTuto(fromHistory=false) {
         document.getElementById('tutorial-overlay').style.display = 'none';
         this.unlockScroll();
+        if(!fromHistory){ try{ this._overlayCloseByUI('tutorial'); }catch(e){} }
         safeStorage.set('gp_visited', 'true');
     },
 
@@ -2438,6 +2485,7 @@ addItem() {
         if(!ov) return;
         ov.style.display = 'flex';
         this.lockScroll();
+        try{ this._overlayPush('export', (fromHistory)=>this.closeExportDialog(true)); }catch(e){}
 
         // Report title option (no style change: toggle existing .hidden)
         const cb = document.getElementById('export-add-title');
@@ -2469,10 +2517,11 @@ addItem() {
         document.addEventListener('keydown', onEsc);
     },
 
-    closeExportDialog() {
+    closeExportDialog(fromHistory=false) {
         const ov = document.getElementById('export-overlay');
         if(ov) ov.style.display = 'none';
         this.unlockScroll();
+        if(!fromHistory){ try{ this._overlayCloseByUI('export'); }catch(e){} }
     },
 
 
@@ -2730,6 +2779,83 @@ addItem() {
                     s.addText("Capture indisponible (html2canvas).", { x:0.9, y:2.0, w:12.0, h:0.6, fontSize:16, color:"CBD5E1", fit: fitText });
                 }
                 if(prev) prev.classList.contains('active') || this.nav(prev.id.replace('view-',''));
+            }
+
+            // Slides: Eisenhower — détails (RACI / Planning / Renoncements) si renseignés
+            {
+                const allItems = Array.isArray(this.data.items) ? this.data.items : [];
+                const hasVal = (v) => String(v ?? '').trim().length > 0;
+
+                const addTextSlide = (title, lines) => {
+                    if(!lines || lines.length === 0) return;
+
+                    const maxLines = 18;
+                    for(let i=0; i<lines.length; i += maxLines){
+                        const chunk = lines.slice(i, i + maxLines);
+
+                        const s = pptx.addSlide();
+                        s.background = { color: "0F172A" };
+                        s.addText(title, { x:0.6, y:0.45, w:12.0, h:0.55, fontSize:24, bold:true, color:"FFFFFF", fit: fitText });
+
+                        s.addText(chunk.join("\n"), {
+                            x:0.75, y:1.2, w:11.9, h:5.7,
+                            fontSize:12.5, color:"CBD5E1", valign:"top", fit: fitText, margin: 0.04
+                        });
+                    }
+                };
+
+                // RACI (Déléguer)
+                {
+                    const raci = this.data.raciByItemId || {};
+                    const list = allItems.filter(it => it.eisenhower === 'delegate');
+                    const lines = [];
+                    list.forEach(it => {
+                        const s = raci[it.id] || {};
+                        if(!hasVal(s.r) && !hasVal(s.a) && !hasVal(s.c) && !hasVal(s.i)) return;
+                        const parts = [];
+                        if(hasVal(s.r)) parts.push(`R: ${String(s.r).trim()}`);
+                        if(hasVal(s.a)) parts.push(`A: ${String(s.a).trim()}`);
+                        if(hasVal(s.c)) parts.push(`C: ${String(s.c).trim()}`);
+                        if(hasVal(s.i)) parts.push(`I: ${String(s.i).trim()}`);
+                        lines.push(`• ${String(it.name || '').trim()} — ${parts.join(' | ')}`.trim());
+                    });
+                    addTextSlide("Eisenhower — Déléguer (RACI)", lines);
+                }
+
+                // Planning (Planifier)
+                {
+                    const planning = this.data.planningByItemId || {};
+                    const list = allItems.filter(it => it.eisenhower === 'plan');
+                    const lines = [];
+                    list.forEach(it => {
+                        const s = planning[it.id] || {};
+                        if(!hasVal(s.date) && !hasVal(s.owner) && !hasVal(s.notes)) return;
+                        const parts = [];
+                        if(hasVal(s.date)) parts.push(`Date: ${String(s.date).trim()}`);
+                        if(hasVal(s.owner)) parts.push(`Resp: ${String(s.owner).trim()}`);
+                        if(hasVal(s.notes)) parts.push(`Notes: ${String(s.notes).replace(/\s+/g,' ').trim()}`);
+                        lines.push(`• ${String(it.name || '').trim()} — ${parts.join(' | ')}`.trim());
+                    });
+                    addTextSlide("Eisenhower — Planifier (Planning)", lines);
+                }
+
+                // Mémoriser (Non critique)
+                {
+                    const ren = this.data.renoncementsByItemId || {};
+                    const list = allItems.filter(it => it.eisenhower === 'eliminate');
+                    const lines = [];
+                    list.forEach(it => {
+                        const s = ren[it.id] || {};
+                        if(!hasVal(s.renoncement) && !hasVal(s.raison) && !hasVal(s.date) && !hasVal(s.notes)) return;
+                        const parts = [];
+                        if(hasVal(s.renoncement)) parts.push(`Renoncement: ${String(s.renoncement).trim()}`);
+                        if(hasVal(s.raison)) parts.push(`Raison: ${String(s.raison).trim()}`);
+                        if(hasVal(s.date)) parts.push(`Date: ${String(s.date).trim()}`);
+                        if(hasVal(s.notes)) parts.push(`Notes: ${String(s.notes).replace(/\s+/g,' ').trim()}`);
+                        lines.push(`• ${String(it.name || '').trim()} — ${parts.join(' | ')}`.trim());
+                    });
+                    addTextSlide("Eisenhower — Mémoriser (Non critique)", lines);
+                }
             }
 
             // Slide: Impact / Effort (quadrants, anti-overlap)
@@ -2993,7 +3119,121 @@ Vos arbitrages défavorisés se retrouvant mécaniquement en bas du classement e
         grid.appendChild(buildQuad('q-4', '🗑️ NI URGENT, NI IMPORTANT (MÉMORISER)', 'eliminate'));
 
         c3.appendChild(grid);
-        root.appendChild(c3);
+
+        /* --- Annexes Eisenhower (si renseigné) : RACI / Planning / Renoncements --- */
+        const _hasVal = (v) => String(v ?? '').trim().length > 0;
+
+        const _makeTable = (headers, rows) => {
+            const table = document.createElement('table');
+            table.style.width = '100%';
+            table.style.borderCollapse = 'collapse';
+            table.style.fontSize = '10.5pt';
+            table.style.marginTop = '6pt';
+
+            const thead = document.createElement('thead');
+            const trh = document.createElement('tr');
+            (headers || []).forEach(h => {
+                const th = document.createElement('th');
+                th.textContent = h;
+                th.style.textAlign = 'left';
+                th.style.fontSize = '9pt';
+                th.style.textTransform = 'uppercase';
+                th.style.letterSpacing = '0.6px';
+                th.style.padding = '6pt 6pt';
+                th.style.borderBottom = '1px solid #000';
+                trh.appendChild(th);
+            });
+            thead.appendChild(trh);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            (rows || []).forEach(r => {
+                const tr = document.createElement('tr');
+                (r || []).forEach((cell, i) => {
+                    const td = document.createElement('td');
+                    td.textContent = String(cell ?? '');
+                    td.style.verticalAlign = 'top';
+                    td.style.padding = '6pt 6pt';
+                    td.style.borderBottom = '1px solid #e5e7eb';
+                    if(i === 0) td.style.fontWeight = '700';
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            return table;
+        };
+
+        const _makeAnnexChapter = (title, headers, rows) => {
+            if(!rows || rows.length === 0) return null;
+            const ch = makeChapter(title, false);
+            const wrap = el('div', null, null);
+            wrap.style.marginTop = '6pt';
+            wrap.appendChild(_makeTable(headers, rows));
+            ch.appendChild(wrap);
+            return ch;
+        };
+
+        // Collect annex rows (we append them AFTER the Eisenhower matrix page to keep the matrix on a dedicated page)
+        let _rowsRaci = [];
+        let _rowsPlanning = [];
+        let _rowsRen = [];
+
+        // RACI (Déléguer)
+        {
+            const raci = this.data.raciByItemId || {};
+            const list = items.filter(it => it.eisenhower === 'delegate');
+            const rows = [];
+            list.forEach(it => {
+                const s = raci[it.id] || {};
+                if(!_hasVal(s.r) && !_hasVal(s.a) && !_hasVal(s.c) && !_hasVal(s.i)) return;
+                rows.push([it.name || '', s.r || '', s.a || '', s.c || '', s.i || '']);
+            });
+            _rowsRaci = rows;
+        }
+
+        // Planning (Planifier)
+        {
+            const planning = this.data.planningByItemId || {};
+            const list = items.filter(it => it.eisenhower === 'plan');
+            const rows = [];
+            list.forEach(it => {
+                const s = planning[it.id] || {};
+                if(!_hasVal(s.date) && !_hasVal(s.owner) && !_hasVal(s.notes)) return;
+                rows.push([it.name || '', s.date || '', s.owner || '', (s.notes || '').replace(/\s+/g,' ').trim()]);
+            });
+            _rowsPlanning = rows;
+        }
+
+        // Mémoriser (Non critique)
+        {
+            const ren = this.data.renoncementsByItemId || {};
+            const list = items.filter(it => it.eisenhower === 'eliminate');
+            const rows = [];
+            list.forEach(it => {
+                const s = ren[it.id] || {};
+                if(!_hasVal(s.renoncement) && !_hasVal(s.raison) && !_hasVal(s.date) && !_hasVal(s.notes)) return;
+                rows.push([it.name || '', s.renoncement || '', s.raison || '', s.date || '', (s.notes || '').replace(/\s+/g,' ').trim()]);
+            });
+            _rowsRen = rows;
+        }
+
+        // Force the Eisenhower matrix to stay alone on its own page
+        c3.style.pageBreakAfter = 'always';
+        c3.style.breakAfter = 'page';
+
+root.appendChild(c3);
+
+        // Annexes Eisenhower (pages dédiées si renseignées)
+        const _annRaci = _makeAnnexChapter('Eisenhower — Déléguer (RACI)', ['Tâche', 'R', 'A', 'C', 'I'], _rowsRaci);
+        if(_annRaci) root.appendChild(_annRaci);
+
+        const _annPlan = _makeAnnexChapter('Eisenhower — Planifier (Planning)', ['Tâche', 'Date', 'Responsable', 'Notes / Jalons'], _rowsPlanning);
+        if(_annPlan) root.appendChild(_annPlan);
+
+        const _annRen = _makeAnnexChapter('Eisenhower — Mémoriser (Non critique)', ['Élément', 'Renoncement', 'Raison', 'Date', 'Notes'], _rowsRen);
+        if(_annRen) root.appendChild(_annRen);
+
 
         /* --- Chapitre 4 (Impact/Effort – listes par cadran, comme Eisenhower) --- */
         const c4 = makeChapter('Chapitre 4 – Matrice impact / effort', false);
@@ -3021,6 +3261,8 @@ Vos arbitrages défavorisés se retrouvant mécaniquement en bas du classement e
         gridIE.appendChild(buildQuadIE('br', 'RENONCER (Impact faible / Effort fort)', it => impactVal(it) < 50 && effortVal(it) > 50));
 
         c4.appendChild(gridIE);
+        c4.style.pageBreakAfter = 'always';
+        c4.style.breakAfter = 'page';
         root.appendChild(c4);
     },
 
@@ -3997,6 +4239,7 @@ const eisTools = {
     this.overlay.style.display = 'flex';
     this.overlay.setAttribute('aria-hidden', 'false');
     document.body.classList.add('eis-modal-open');
+    try{ app._overlayPush('eis-tools', ()=>this.close(true)); }catch(e){}
 
     // Focus first input if present
     setTimeout(() => {
@@ -4004,13 +4247,13 @@ const eisTools = {
       if (first) first.focus();
     }, 0);
   },
-
-  close() {
+  close(fromHistory=false) {
     if (!this.overlay) return;
     this.overlay.style.display = 'none';
     this.overlay.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('eis-modal-open');
     this.bodyEl.innerHTML = '';
+    if(!fromHistory){ try{ app._overlayCloseByUI('eis-tools'); }catch(e){} }
     // Restore focus
     if (this.lastFocusEl && typeof this.lastFocusEl.focus === 'function') {
       this.lastFocusEl.focus();
@@ -4632,15 +4875,17 @@ const impactEffort = {
       backdrop.hidden = false;
       // lock scroll using app helper if present
       try{ if(window.app && typeof app.lockScroll === 'function') app.lockScroll(); }catch(e){}
+      try{ if(window.app && typeof app._overlayPush === 'function') app._overlayPush('drawer', ()=>close(true)); }catch(e){}
       // focus
       setTimeout(()=>{ drawer.focus(); }, 0);
     }
-    function close(){
+    function close(fromHistory=false){
       drawer.classList.remove('open');
       drawer.setAttribute('aria-hidden','true');
       burger.setAttribute('aria-expanded','false');
       backdrop.hidden = true;
       try{ if(window.app && typeof app.unlockScroll === 'function') app.unlockScroll(); }catch(e){}
+      if(!fromHistory){ try{ if(window.app && typeof app._overlayCloseByUI === 'function') app._overlayCloseByUI('drawer'); }catch(e){} }
       try{ if(lastFocused && lastFocused.focus) lastFocused.focus(); }catch(e){}
     }
 
